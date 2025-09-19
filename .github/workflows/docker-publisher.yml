@@ -73,13 +73,13 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:latest
 
             # Para o contêiner atual, se ele estiver rodando (o '|| true' evita erro se o contêiner não existir)
-            docker stop meu-servidor-web || true
+            docker stop ngnix-github || true
 
             # Remove o contêiner antigo para evitar conflitos
-            docker rm meu-servidor-web || true
+            docker rm ngnix-github || true
 
             # Inicia o novo contêiner com a imagem atualizada e as configurações desejadas
-            docker run -d -p 80:80 --name meu-servidor-web --restart always ghcr.io/${{ github.repository }}:latest
+            docker run -d -p 80:80 --name ngnix-github --restart always ghcr.io/${{ github.repository }}:latest
 
             # Opcional, mas recomendado: Limpa imagens Docker antigas e não utilizadas para economizar espaço em disco
             docker image prune -f
