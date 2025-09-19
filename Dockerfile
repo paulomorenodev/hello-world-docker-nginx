@@ -1,17 +1,11 @@
-# Use a imagem oficial do Nginx como base
+# Use a imagem oficial do Nginx a partir do Alpine Linux
 FROM nginx:alpine
 
-# Remover a configuração padrão do Nginx
+# Remove o arquivo de configuração padrão que vem com a imagem
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Copiar nossa configuração personalizada
-COPY nginx.conf /etc/nginx/conf.d/
+# Copia seu arquivo de configuração local para o local correto dentro do contêiner
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copiar nossa página HTML para o diretório padrão do Nginx
-COPY index.html /usr/share/nginx/html/
-
-# Expor a porta 9090
-EXPOSE 9090
-
-# Comando para iniciar o Nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Copia os arquivos do seu site (HTML, CSS, JS) para a pasta que o Nginx serve
+COPY . /usr/share/nginx/html
