@@ -1,0 +1,71 @@
+name: Deploy to OCI Compute (Alternative)
+
+# Workflow alternativo usando Compute Instance em vez de Container Instance
+# Para usar este workflow, renomeie para deploy-oci.yml e remova o outro
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE_NAME: hello-world-nginx
+  CONTAINER_NAME: hello-world-app
+
+jobs:
+  deploy-to-compute:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to OCI Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ secrets.OCI_REGISTRY_URL }}
+        username: ${{ secrets.OCI_USERNAME }}
+        password: ${{ secrets.OCI_AUTH_TOKEN }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+    
+    - name: Deploy to OCI Compute Instance
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.OCI_COMPUTE_IP }}
+        username: ${{ secrets.OCI_COMPUTE_USER }}
+        key: ${{ secrets.OCI_COMPUTE_SSH_KEY }}
+        script: |
+          # Login no registry OCI
+          echo "${{ secrets.OCI_AUTH_TOKEN }}" | docker login ${{ secrets.OCI_REGISTRY_URL }} -u "${{ secrets.OCI_USERNAME }}" --password-stdin
+          
+          # Parar e remover container existente
+          docker stop ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+          docker rm ${{ env.CONTAINER_NAME }} 2>/dev/null || true
+          
+          # Pull da nova imagem
+          docker pull ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          
+          # Executar novo container
+          docker run -d \
+            --name ${{ env.CONTAINER_NAME }} \
+            --restart unless-stopped \
+            -p 9090:9090 \
+            ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          
+          # Verificar se está rodando
+          sleep 5
+          docker ps | grep ${{ env.CONTAINER_NAME }}
+          
+          echo "✅ Deploy concluído!"
+          echo "🌐 Acesse: http://${{ secrets.OCI_COMPUTE_IP }}:9090"

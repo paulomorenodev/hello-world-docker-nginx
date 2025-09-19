@@ -109,14 +109,39 @@ git push
 git clone https://github.com/SEU_USUARIO/hello-world-docker-nginx.git
 ```
 
+## 🚀 Deploy Automático com GitHub Actions
+
+Este projeto inclui configuração para deploy automático na **Oracle Cloud Infrastructure (OCI)** usando GitHub Actions.
+
+### Como funciona:
+- ✅ **Push automático**: Qualquer push na branch `main` dispara o deploy
+- 🐳 **Build Docker**: Constrói imagem multi-arquitetura automaticamente  
+- 📦 **Registry OCI**: Envia imagem para OCI Container Registry
+- 🌐 **Deploy OCI**: Cria/atualiza Container Instance na OCI
+- 💬 **Notificação**: Comenta no PR com URL da aplicação
+
+### Configurar deploy OCI:
+1. Leia o guia completo: **[OCI-SETUP.md](OCI-SETUP.md)**
+2. Configure os secrets no GitHub (Settings > Secrets)
+3. Faça um push e veja a mágica acontecer! ✨
+
+### Workflows disponíveis:
+- **`deploy-oci.yml`** - Deploy usando OCI Container Instances (recomendado)
+- **`deploy-oci-compute.yml`** - Deploy usando Compute Instance com SSH
+
 ## Estrutura dos Arquivos
 
 ```
 git_actions/
+├── .github/workflows/          # GitHub Actions
+│   ├── deploy-oci.yml         # Deploy principal (Container Instance)
+│   └── deploy-oci-compute.yml # Deploy alternativo (Compute Instance)
 ├── .gitignore
 ├── Dockerfile
 ├── nginx.conf
 ├── index.html
 ├── main.py
-└── README.md
+├── README.md
+├── OCI-SETUP.md              # Guia de configuração OCI
+└── setup-github.sh
 ```

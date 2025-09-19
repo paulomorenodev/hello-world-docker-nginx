@@ -1,0 +1,143 @@
+name: Deploy to OCI
+
+# Trigger do workflow - executa em push para main e pull requests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Permite execução manual
+
+# Variáveis de ambiente globais
+env:
+  DOCKER_IMAGE_NAME: hello-world-nginx
+  OCI_REGION: us-ashburn-1 # Altere para sua região OCI
+  CONTAINER_NAME: hello-world-app
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Checkout do código
+    - name: Checkout código
+      uses: actions/checkout@v4
+    
+    # 2. Setup Docker Buildx
+    - name: Setup Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    # 3. Login no OCI Container Registry
+    - name: Login to OCI Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ secrets.OCI_REGISTRY_URL }}
+        username: ${{ secrets.OCI_USERNAME }}
+        password: ${{ secrets.OCI_AUTH_TOKEN }}
+    
+    # 4. Build e Push da imagem Docker
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+          ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    # 5. Setup OCI CLI
+    - name: Setup OCI CLI
+      uses: oracle-actions/configure-oci-cli@v1.0
+      with:
+        user: ${{ secrets.OCI_USER_OCID }}
+        fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+        tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+        region: ${{ env.OCI_REGION }}
+        private-key: ${{ secrets.OCI_PRIVATE_KEY }}
+    
+    # 6. Deploy usando OCI Container Instances
+    - name: Deploy to OCI Container Instances
+      run: |
+        # Verificar se já existe uma instância
+        EXISTING_INSTANCE=$(oci container-instances container-instance list \
+          --compartment-id ${{ secrets.OCI_COMPARTMENT_OCID }} \
+          --display-name ${{ env.CONTAINER_NAME }} \
+          --query 'data[0].id' --raw-output 2>/dev/null || echo "null")
+        
+        if [ "$EXISTING_INSTANCE" != "null" ] && [ "$EXISTING_INSTANCE" != "" ]; then
+          echo "Removendo instância existente: $EXISTING_INSTANCE"
+          oci container-instances container-instance delete \
+            --container-instance-id $EXISTING_INSTANCE \
+            --force
+          
+          # Aguardar remoção
+          echo "Aguardando remoção da instância..."
+          sleep 30
+        fi
+        
+        # Criar nova instância
+        echo "Criando nova instância do container..."
+        oci container-instances container-instance create \
+          --compartment-id ${{ secrets.OCI_COMPARTMENT_OCID }} \
+          --availability-domain ${{ secrets.OCI_AVAILABILITY_DOMAIN }} \
+          --shape CI.Standard.E4.Flex \
+          --shape-config '{"memory_in_gbs": 1, "ocpus": 0.5}' \
+          --display-name ${{ env.CONTAINER_NAME }} \
+          --containers '[{
+            "display_name": "${{ env.CONTAINER_NAME }}",
+            "image_url": "${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:latest",
+            "environment_variables": {},
+            "resource_config": {
+              "memory_limit_in_gbs": 1,
+              "vcpus_limit": 0.5
+            }
+          }]' \
+          --vnics '[{
+            "subnet_id": "${{ secrets.OCI_SUBNET_OCID }}",
+            "assign_public_ip": true,
+            "display_name": "${{ env.CONTAINER_NAME }}-vnic"
+          }]' \
+          --wait-for-state ACTIVE \
+          --max-wait-seconds 900
+    
+    # 7. Obter IP público da instância
+    - name: Get Container Instance IP
+      run: |
+        # Aguardar um pouco para garantir que a instância esteja pronta
+        sleep 10
+        
+        INSTANCE_ID=$(oci container-instances container-instance list \
+          --compartment-id ${{ secrets.OCI_COMPARTMENT_OCID }} \
+          --display-name ${{ env.CONTAINER_NAME }} \
+          --query 'data[0].id' --raw-output)
+        
+        PUBLIC_IP=$(oci container-instances container-instance get \
+          --container-instance-id $INSTANCE_ID \
+          --query 'data.vnics[0]."public-ip"' --raw-output)
+        
+        echo "🚀 Deploy concluído!"
+        echo "📍 IP Público: $PUBLIC_IP"
+        echo "🌐 Acesse: http://$PUBLIC_IP:9090"
+        echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
+    
+    # 8. Comentar no PR (se for um PR)
+    - name: Comment PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `🚀 **Deploy realizado com sucesso!**
+            
+            📍 **IP Público:** ${{ env.PUBLIC_IP }}
+            🌐 **URL:** http://${{ env.PUBLIC_IP }}:9090
+            🐳 **Imagem:** ${{ secrets.OCI_REGISTRY_URL }}/${{ secrets.OCI_NAMESPACE }}/${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+            
+            ✅ Sua aplicação está rodando na OCI!`
+          })
