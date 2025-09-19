@@ -1,0 +1,48 @@
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker
+*.tar
+*.tar.gz
+
+# Arquivos temporários
+*.tmp
+*.temp
+*~
+
+# Arquivos do editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Arquivos de backup
+*.bak
+*.backup
+
+# Arquivos Python (caso existam no projeto)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Node modules (caso venha a usar)
+node_modules/
+npm-debug.log*
+
+# Arquivos de ambiente
+.env
+.env.local
+.env.production
+.env.staging
