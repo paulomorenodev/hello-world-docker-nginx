@@ -1,0 +1,51 @@
+# Nome do seu workflow. Aparecerá na aba "Actions" do GitHub.
+name: Build and Push Docker Image to GHCR
+
+# Define o gatilho (trigger) para este workflow.
+on:
+  # Roda este workflow sempre que houver um push na branch 'main'.
+  push:
+    branches: [ "main" ]
+  # Permite que você rode este workflow manualmente pela aba Actions.
+  workflow_dispatch:
+
+# Define as permissões necessárias para o GITHUB_TOKEN.
+permissions:
+  contents: read
+  packages: write
+
+# Define os jobs (trabalhos) que serão executados.
+jobs:
+  build-and-push-image:
+    # O tipo de máquina virtual para rodar o job. 'ubuntu-latest' é o padrão recomendado.
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Baixa o código do seu repositório para a máquina virtual.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Faz o login no GitHub Container Registry (GHCR).
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          # O GITHUB_TOKEN é um segredo gerado automaticamente pelo GitHub.
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Extrai metadados (como tags e labels) para a imagem Docker.
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+
+      # 4. Constrói a imagem Docker e a envia para o GHCR.
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

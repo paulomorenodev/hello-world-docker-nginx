@@ -1,47 +1,34 @@
-# Nome do seu workflow. Aparecerá na aba "Actions" do GitHub.
-name: Build and Push Docker Image to GHCR
+name: Build, Push, and Deploy Docker Image
 
-# Define o gatilho (trigger) para este workflow.
 on:
-  # Roda este workflow sempre que houver um push na branch 'main'.
   push:
     branches: [ "main" ]
-  # Permite que você rode este workflow manualmente pela aba Actions.
   workflow_dispatch:
 
-# Define as permissões necessárias para o GITHUB_TOKEN.
 permissions:
   contents: read
   packages: write
 
-# Define os jobs (trabalhos) que serão executados.
 jobs:
   build-and-push-image:
-    # O tipo de máquina virtual para rodar o job. 'ubuntu-latest' é o padrão recomendado.
     runs-on: ubuntu-latest
-
     steps:
-      # 1. Baixa o código do seu repositório para a máquina virtual.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Faz o login no GitHub Container Registry (GHCR).
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          # O GITHUB_TOKEN é um segredo gerado automaticamente pelo GitHub.
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.GH_USER }}
+          password: ${{ secrets.GH_PAT }}
 
-      # 3. Extrai metadados (como tags e labels) para a imagem Docker.
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
 
-      # 4. Constrói a imagem Docker e a envia para o GHCR.
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -49,3 +36,36 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  # NOVO JOB DE DEPLOY
+  deploy:
+    # Garante que este job só rode após o 'build-and-push-image' ser concluído
+    needs: build-and-push-image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to OCI Server
+        # Action popular que simplifica a execução de comandos via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            # Faz o login no GHCR dentro do servidor
+            echo ${{ secrets.GH_PAT }} | docker login ghcr.io -u ${{ secrets.GH_USER }} --password-stdin
+
+            # Baixa a versão mais recente da imagem
+            docker pull ghcr.io/${{ github.repository }}:latest
+
+            # Para o contêiner atual, se ele estiver rodando (|| true evita erro se não existir)
+            docker stop ngnix-github || true
+
+            # Remove o contêiner antigo
+            docker rm ngnix-github || true
+
+            # Inicia o novo contêiner com a imagem atualizada
+            docker run -d -p 80:80 --name ngnix-github --restart always ghcr.io/${{ github.repository }}:latest
+
+            # (Opcional) Limpa imagens antigas e não utilizadas para economizar espaço
+            docker image prune -f
