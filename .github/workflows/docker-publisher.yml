@@ -19,6 +19,9 @@ jobs:
   # Primeiro job: construir e enviar a imagem para o GHCR
   build-and-push-image:
     runs-on: ubuntu-latest
+    permissions:      # <--- ADICIONE ESTE BLOCO
+      contents: read
+      packages: write
     steps:
       # Baixa o código do seu repositório para o ambiente de execução
       - name: Checkout repository
